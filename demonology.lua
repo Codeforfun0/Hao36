@@ -1,116 +1,160 @@
-local CoreGui = game:GetService("CoreGui")
-local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local lp = Players.LocalPlayer
+local cam = workspace.CurrentCamera
 
 local notified = {}
 
-local function Notify(title, text)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = 5
-        })
-    end)
+local function Notify(id,text)
+	if notified[id] then return end
+	notified[id] = true
+
+	pcall(function()
+		StarterGui:SetCore("SendNotification",{
+			Title="ESP",
+			Text=text,
+			Duration=5
+		})
+	end)
 end
 
-local function ESP(obj, color)
-    if not obj or obj:FindFirstChild("ESP") then return end
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "ESP"
-    hl.FillTransparency = 0.5
-    hl.OutlineTransparency = 0
-    hl.FillColor = color
-    hl.OutlineColor = color
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = obj
-    hl.Parent = obj
+local function getRoot(obj)
+	if obj:IsA("BasePart") then
+		return obj
+	end
+	return obj:FindFirstChildWhichIsA("BasePart",true)
 end
 
--- Items >9
-local items = workspace:WaitForChild("Items")
+local ESP = {}
 
-local function checkItem(item)
-    local num = tonumber(item.Name)
-    if num and num > 9 then
-        ESP(item, Color3.fromRGB(255,255,0))
-    end
+local function CreateESP(obj,color,box)
+	if ESP[obj] then return end
+
+	local square = Drawing.new("Square")
+	square.Thickness = 2
+	square.Filled = false
+	square.Color = color
+
+	local text = Drawing.new("Text")
+	text.Size = 16
+	text.Center = true
+	text.Outline = true
+	text.Color = color
+
+	ESP[obj] = {
+		Square=square,
+		Text=text,
+		Box=box
+	}
 end
 
-for _,v in ipairs(items:GetChildren()) do
-    checkItem(v)
+local function RemoveESP(obj)
+	if not ESP[obj] then return end
+	ESP[obj].Square:Remove()
+	ESP[obj].Text:Remove()
+	ESP[obj]=nil
 end
 
-items.ChildAdded:Connect(checkItem)
-
--- InMapItems ESP
-local mapItems = workspace:WaitForChild("Map"):WaitForChild("InMapItems")
-
-local function addMapESP(obj)
-    ESP(obj, Color3.fromRGB(0,255,255))
+for _,v in ipairs(workspace.Items:GetChildren()) do
+	if tonumber(v.Name) and tonumber(v.Name)>9 then
+		CreateESP(v,Color3.new(1,1,0),false)
+	end
 end
 
-for _,v in ipairs(mapItems:GetChildren()) do
-    addMapESP(v)
-end
-
-mapItems.ChildAdded:Connect(addMapESP)
-
--- Ghost ESP
-local function setupGhost(g)
-    ESP(g, Color3.fromRGB(255,0,0))
-
-    local laserNotified = false
-
-    local function check()
-        if g:IsA("BasePart") then
-            if g.Transparency > 0.8 and g.Transparency < 1 and not laserNotified then
-                laserNotified = true
-                Notify("Ghost","Laser Found!")
-            end
-        end
-    end
-
-    check()
-
-    if g:IsA("BasePart") then
-        g:GetPropertyChangedSignal("Transparency"):Connect(check)
-    end
-end
-
-if workspace:FindFirstChild("Ghost") then
-    setupGhost(workspace.Ghost)
-end
-
-workspace.ChildAdded:Connect(function(obj)
-    if obj.Name=="Ghost" then
-        setupGhost(obj)
-    elseif obj.Name=="GhostOrb" and not notified[obj] then
-        notified[obj]=true
-        Notify("GhostOrb","GhostOrb Found!")
-    end
+workspace.Items.ChildAdded:Connect(function(v)
+	if tonumber(v.Name) and tonumber(v.Name)>9 then
+		CreateESP(v,Color3.new(1,1,0),false)
+	end
 end)
 
-if workspace:FindFirstChild("GhostOrb") then
-    notified[workspace.GhostOrb]=true
-    Notify("GhostOrb","GhostOrb Found!")
+local InMap=workspace.Map:WaitForChild("InMapItems")
+
+for _,v in ipairs(InMap:GetChildren()) do
+	CreateESP(v,Color3.new(0,1,1),false)
 end
 
--- Handprints
-local hp = workspace:WaitForChild("Handprints")
-
-hp.ChildAdded:Connect(function(obj)
-    if notified[obj] then return end
-    notified[obj]=true
-    Notify("Handprints",obj:GetFullName())
+InMap.ChildAdded:Connect(function(v)
+	CreateESP(v,Color3.new(0,1,1),false)
 end)
 
--- ScratchText
-local st = workspace:WaitForChild("ScratchText")
+CreateESP(workspace.Ghost,Color3.new(1,0,0),true)
 
-st.ChildAdded:Connect(function(obj)
-    if notified[obj] then return end
-    notified[obj]=true
-    Notify("ScratchText",obj:GetFullName())
+workspace.Handprints.ChildAdded:Connect(function(c)
+	Notify(c:GetDebugId(),"Handprints: "..c.Name)
+end)
+
+workspace.ScratchText.ChildAdded:Connect(function(c)
+	Notify(c:GetDebugId(),"ScratchText: "..c.Name)
+end)
+
+task.spawn(function()
+	while task.wait(.5) do
+		local orb=workspace:FindFirstChild("GhostOrb")
+		if orb then
+			Notify("GhostOrb","GhostOrb Found!")
+		end
+	end
+end)
+
+task.spawn(function()
+	while task.wait(.2) do
+		local g=workspace:FindFirstChild("Ghost")
+		if g and g:IsA("BasePart") then
+			if g.Transparency>0.8 and g.Transparency<1 then
+				Notify("Laser","Laser Found!")
+			end
+		end
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+
+	for obj,data in pairs(ESP) do
+
+		if not obj.Parent then
+			RemoveESP(obj)
+			continue
+		end
+
+		local part=getRoot(obj)
+
+		if not part then
+			data.Square.Visible=false
+			data.Text.Visible=false
+			continue
+		end
+
+		local pos,onScreen=cam:WorldToViewportPoint(part.Position)
+
+		if not onScreen then
+			data.Square.Visible=false
+			data.Text.Visible=false
+			continue
+		end
+
+		local dist=(cam.CFrame.Position-part.Position).Magnitude
+
+		data.Text.Text=math.floor(dist).."m"
+		data.Text.Position=Vector2.new(pos.X,pos.Y-35)
+		data.Text.Visible=true
+
+		if data.Box then
+			local s=120/dist*8
+			s=math.clamp(s,20,200)
+
+			data.Square.Size=Vector2.new(s,s*2)
+			data.Square.Position=Vector2.new(pos.X-s/2,pos.Y-s)
+		else
+			local s=80/dist*8
+			s=math.clamp(s,15,80)
+
+			data.Square.Size=Vector2.new(s,s)
+			data.Square.Position=Vector2.new(pos.X-s/2,pos.Y-s/2)
+		end
+
+		data.Square.Visible=true
+	end
+
 end)
